@@ -1,3 +1,10 @@
+## [4.7.2](https://github.com/amplitude/Amplitude-Flutter/compare/v4.7.1...v4.7.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **android:** update compileSdk to 35 and Java compatibility to 17 ([#314](https://github.com/amplitude/Amplitude-Flutter/issues/314)) ([7c4cfd7](https://github.com/amplitude/Amplitude-Flutter/commit/7c4cfd7db12546ffb7d34627620d4d0a1da9b765))
+
 ## [4.7.1](https://github.com/amplitude/Amplitude-Flutter/compare/v4.7.0...v4.7.1) (2026-08-11)
 
 
