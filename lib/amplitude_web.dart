@@ -13,9 +13,14 @@ import 'constants.dart';
 @JS()
 external Amplitude get amplitude;
 
+@JS('Object.defineProperty')
+external void _jsDefineProperty(
+    JSObject o, JSString property, JSObject descriptor);
+
 class AmplitudeFlutterPlugin {
   Map<String, Amplitude> instances = {};
   Map<String, JSObject> detachedConnectivityPlugins = {};
+  Map<String, void Function(bool)> offlineControllers = {};
 
   static void registerWith(Registrar registrar) {
     final channel = MethodChannel(
@@ -37,16 +42,45 @@ class AmplitudeFlutterPlugin {
       JSObject configuration = getConfiguration(call);
       String instanceName =
           args['instanceName'] ?? Constants.defaultInstanceName;
+      bool initialOffline = args['offline'] == true;
 
-      // Set library
+      // Track and control offline state across SDK lifecycle
+      bool manualOffline = initialOffline;
+      bool currentOffline = initialOffline;
+
+      void setOfflineState(bool offline) {
+        manualOffline = offline;
+        currentOffline = offline;
+      }
+
+      offlineControllers[instanceName] = setOfflineState;
+
+      // Set library and install offline guard during plugin setup to prevent
+      // Browser SDK network checker from overwriting manual offline mode during init
       Amplitude instance = amplitude.createInstance();
       instance.add(createJSInteropWrapper(FlutterLibraryPlugin(
-          args['library'] ?? 'amplitude_flutter/unknown')));
+        args['library'] ?? 'amplitude_flutter/unknown',
+        onSetup: (JSObject config) {
+          final descriptor = JSObject();
+          descriptor.setProperty('configurable'.toJS, true.toJS);
+          descriptor.setProperty('enumerable'.toJS, true.toJS);
+          descriptor.setProperty(
+              'get'.toJS, (() => currentOffline.toJS).toJS);
+          descriptor.setProperty('set'.toJS, ((JSAny? val) {
+            if (manualOffline) return;
+            if (val != null && val is JSBoolean) {
+              currentOffline = val.toDart;
+            }
+          }).toJS);
+          _jsDefineProperty(config, 'offline'.toJS, descriptor);
+        },
+      )));
+
       await instance.init(apiKey, configuration).toDart;
 
       instances[instanceName] = instance;
 
-      if (args['offline'] == true) {
+      if (initialOffline) {
         applyOfflineMode(instanceName, instance, true);
       }
 
@@ -166,6 +200,7 @@ class AmplitudeFlutterPlugin {
   void applyOfflineMode(
       String instanceName, Amplitude instance, bool offline) {
     const pluginName = '@amplitude/plugin-network-checker-browser';
+    offlineControllers[instanceName]?.call(offline);
     if (offline) {
       final existingPlugin = instance.plugin(pluginName.toJS);
       if (existingPlugin != null) {
