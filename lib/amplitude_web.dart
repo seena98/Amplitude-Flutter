@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
@@ -42,6 +43,10 @@ class AmplitudeFlutterPlugin {
 
       instances[args['instanceName'] ?? Constants.defaultInstanceName] =
           instance;
+
+      if (args['offline'] == true) {
+        applyOfflineMode(instance, true);
+      }
 
       return null;
     }
@@ -108,7 +113,11 @@ class AmplitudeFlutterPlugin {
         }
       case "setOffline":
         {
-          // Browser SDK 2 manages offline automatically; handle method gracefully
+          Map args = call.arguments['properties'];
+          bool? offline = args['offline'];
+          if (offline != null) {
+            applyOfflineMode(instance, offline);
+          }
           return;
         }
       default:
@@ -145,5 +154,23 @@ class AmplitudeFlutterPlugin {
   JSObject getConfiguration(MethodCall call) {
     final configuration = Map<String, dynamic>.from(call.arguments as Map);
     return transformWebConfiguration(configuration).jsify() as JSObject;
+  }
+
+  /// Applies manual offline mode to a web Amplitude instance, ensuring
+  /// automatic network listeners do not overwrite the forced offline state.
+  void applyOfflineMode(Amplitude instance, bool offline) {
+    if (offline) {
+      instance.remove('@amplitude/plugin-network-checker-browser'.toJS);
+      final config = instance.getProperty('config'.toJS);
+      if (config != null && config is JSObject) {
+        config.setProperty('offline'.toJS, true.toJS);
+      }
+    } else {
+      final config = instance.getProperty('config'.toJS);
+      if (config != null && config is JSObject) {
+        config.setProperty('offline'.toJS, false.toJS);
+      }
+      instance.flush();
+    }
   }
 }
