@@ -15,6 +15,7 @@ external Amplitude get amplitude;
 
 class AmplitudeFlutterPlugin {
   Map<String, Amplitude> instances = {};
+  Map<String, JSObject> detachedConnectivityPlugins = {};
 
   static void registerWith(Registrar registrar) {
     final channel = MethodChannel(
@@ -34,18 +35,19 @@ class AmplitudeFlutterPlugin {
       var args = call.arguments;
       String apiKey = args['apiKey'];
       JSObject configuration = getConfiguration(call);
+      String instanceName =
+          args['instanceName'] ?? Constants.defaultInstanceName;
 
       // Set library
       Amplitude instance = amplitude.createInstance();
       instance.add(createJSInteropWrapper(FlutterLibraryPlugin(
           args['library'] ?? 'amplitude_flutter/unknown')));
-      instance.init(apiKey, configuration);
+      await instance.init(apiKey, configuration).toDart;
 
-      instances[args['instanceName'] ?? Constants.defaultInstanceName] =
-          instance;
+      instances[instanceName] = instance;
 
       if (args['offline'] == true) {
-        applyOfflineMode(instance, true);
+        applyOfflineMode(instanceName, instance, true);
       }
 
       return null;
@@ -116,7 +118,9 @@ class AmplitudeFlutterPlugin {
           Map args = call.arguments['properties'];
           bool? offline = args['offline'];
           if (offline != null) {
-            applyOfflineMode(instance, offline);
+            String instanceName =
+                call.arguments['instanceName'] ?? Constants.defaultInstanceName;
+            applyOfflineMode(instanceName, instance, offline);
           }
           return;
         }
@@ -157,15 +161,26 @@ class AmplitudeFlutterPlugin {
   }
 
   /// Applies manual offline mode to a web Amplitude instance, ensuring
-  /// automatic network listeners do not overwrite the forced offline state.
-  void applyOfflineMode(Amplitude instance, bool offline) {
+  /// automatic network listeners do not overwrite the forced offline state,
+  /// and restoring the connectivity checker when returning online.
+  void applyOfflineMode(
+      String instanceName, Amplitude instance, bool offline) {
+    const pluginName = '@amplitude/plugin-network-checker-browser';
     if (offline) {
-      instance.remove('@amplitude/plugin-network-checker-browser'.toJS);
+      final existingPlugin = instance.plugin(pluginName.toJS);
+      if (existingPlugin != null) {
+        detachedConnectivityPlugins[instanceName] = existingPlugin;
+        instance.remove(pluginName.toJS);
+      }
       final config = instance.getProperty('config'.toJS);
       if (config != null && config is JSObject) {
         config.setProperty('offline'.toJS, true.toJS);
       }
     } else {
+      final detached = detachedConnectivityPlugins.remove(instanceName);
+      if (detached != null) {
+        instance.add(detached);
+      }
       final config = instance.getProperty('config'.toJS);
       if (config != null && config is JSObject) {
         config.setProperty('offline'.toJS, false.toJS);

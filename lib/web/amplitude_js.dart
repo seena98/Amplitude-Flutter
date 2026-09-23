@@ -6,6 +6,7 @@ extension type Amplitude(JSObject _) implements JSObject {
   external JSPromise init(String apiKey, JSObject? configuration);
   external void add(JSObject plugin);
   external void remove(JSString pluginName);
+  external JSObject? plugin(JSString pluginName);
   external void track(JSObject event);
   external JSString? getUserId();
   external void setUserId(JSString? userId);
