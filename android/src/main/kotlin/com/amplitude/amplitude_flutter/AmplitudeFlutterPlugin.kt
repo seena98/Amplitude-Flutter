@@ -116,14 +116,15 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 AutocaptureOption.DEEP_LINKS in configuration.autocapture
             )
 
-            val initialOffline = call.argument<Boolean>("offline") ?: false
-            desiredOfflineStates[instanceName] = initialOffline
-            if (initialOffline) {
-                amplitude.configuration.offline = true
+            val initialOffline = call.argument<Boolean>("offline")
+            if (initialOffline == true) {
+                desiredOfflineStates[instanceName] = true
             }
 
             amplitude.isBuilt.invokeOnCompletion {
-                syncConnectivityPlugin(instanceName, amplitude)
+                if (desiredOfflineStates.containsKey(instanceName)) {
+                    syncConnectivityPlugin(instanceName, amplitude)
+                }
             }
 
             result.success("init called..")
@@ -225,12 +226,8 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 if (offline != null) {
                     val currentInstanceName = amplitude.configuration.instanceName
                     desiredOfflineStates[currentInstanceName] = offline
-                    amplitude.configuration.offline = offline
                     if (amplitude.isBuilt.isCompleted) {
                         syncConnectivityPlugin(currentInstanceName, amplitude)
-                        if (!offline) {
-                            amplitude.flush()
-                        }
                     }
                     amplitude.logger.debug("Set offline to $offline")
                 } else {
@@ -305,6 +302,8 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 amplitude.add(AndroidNetworkConnectivityCheckerPlugin())
             }
             amplitude.configuration.offline = false
+            amplitude.flush()
+            desiredOfflineStates.remove(instanceName)
         }
     }
 
@@ -359,8 +358,6 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             // AndroidNetworkConnectivityCheckerPlugin, avoiding the race where
             // the checker immediately resets offline to false upon detecting network.
             configuration.offline = AndroidNetworkConnectivityCheckerPlugin.Disabled
-        } else if (offline == false) {
-            configuration.offline = false
         }
         return configuration
     }

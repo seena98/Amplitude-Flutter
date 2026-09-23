@@ -294,7 +294,6 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
     private func applyOfflineMode(amplitude: Amplitude?, offline: Bool) {
         guard let amplitude = amplitude else { return }
         let instanceName = amplitude.configuration.instanceName
-        amplitude.configuration.offline = offline
         if offline {
             // When manually forced offline, disable and remove the automatic
             // network connectivity checker so network availability events do
@@ -316,6 +315,7 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
                 }
             }
             amplitude.configuration.offline = false
+            amplitude.flush()
         }
     }
 
