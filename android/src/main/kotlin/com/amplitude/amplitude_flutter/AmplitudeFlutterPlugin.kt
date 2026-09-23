@@ -12,6 +12,7 @@ import com.amplitude.android.ConfigurationBuilder
 import com.amplitude.android.TrackingOptions
 import com.amplitude.android.events.IngestionMetadata
 import com.amplitude.android.events.Plan
+import com.amplitude.android.plugins.AndroidNetworkConnectivityCheckerPlugin
 import com.amplitude.common.Logger
 import com.amplitude.core.events.BaseEvent
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -113,6 +114,10 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 AutocaptureOption.DEEP_LINKS in configuration.autocapture
             )
 
+            if (configuration.offline == true) {
+                applyOfflineMode(amplitude, true)
+            }
+
             result.success("init called..")
             return
         }
@@ -210,7 +215,7 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val offline = call.argument<Map<String, Boolean>>("properties")?.get("offline")
                     ?: call.argument<Boolean>("offline")
                 if (offline != null) {
-                    amplitude.configuration.offline = offline
+                    applyOfflineMode(amplitude, offline)
                     amplitude.logger.debug("Set offline to $offline")
                 } else {
                     amplitude.logger.warn("setOffline type casting to Bool failed.")
@@ -262,6 +267,27 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
                 if (deepLinks) {
                     activity.get()?.let { utils.trackDeepLinkOpenedEvent(it) }
+                }
+            }
+        }
+    }
+
+    private fun applyOfflineMode(amplitude: Amplitude, offline: Boolean) {
+        amplitude.configuration.offline = offline
+        amplitude.isBuilt.invokeOnCompletion {
+            if (offline) {
+                // When manually forced offline, disable and remove the automatic
+                // network connectivity checker so network availability events do
+                // not overwrite the manual offline state.
+                amplitude.findPlugin<AndroidNetworkConnectivityCheckerPlugin>()?.let { plugin ->
+                    plugin.teardown()
+                    amplitude.remove(plugin)
+                }
+                amplitude.configuration.offline = true
+            } else {
+                // Re-enable automatic connectivity checking when returning online
+                if (amplitude.findPlugin<AndroidNetworkConnectivityCheckerPlugin>() == null) {
+                    amplitude.add(AndroidNetworkConnectivityCheckerPlugin())
                 }
             }
         }

@@ -11,6 +11,7 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
 
 @objc public class SwiftAmplitudeFlutterPlugin: NSObject, FlutterPlugin {
     var instances: [String: Amplitude] = [:]
+    var detachedConnectivityPlugins: [String: [Plugin]] = [:]
     static let methodChannelName = "amplitude_flutter"
 
     /// Returns an Amplitude instance by its instance name.
@@ -66,6 +67,10 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
             )
 
             amplitude?.logger?.debug(message: "Amplitude has been successfully initialized.")
+
+            if amplitude?.configuration.offline == true {
+                applyOfflineMode(amplitude: amplitude, offline: true)
+            }
 
             result("init called..")
             return
@@ -170,7 +175,7 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
                 return
             }
             if let offline = args["offline"] as? Bool {
-                amplitude?.configuration.offline = offline
+                applyOfflineMode(amplitude: amplitude, offline: offline)
                 amplitude?.logger?.debug(message: "Set offline to \(offline)")
             } else {
                 amplitude?.logger?.warn(message: "setOffline type casting to Bool failed.")
@@ -284,6 +289,34 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
         }
 
         return configuration
+    }
+
+    private func applyOfflineMode(amplitude: Amplitude?, offline: Bool) {
+        guard let amplitude = amplitude else { return }
+        let instanceName = amplitude.configuration.instanceName
+        amplitude.configuration.offline = offline
+        if offline {
+            // When manually forced offline, disable and remove the automatic
+            // network connectivity checker so network availability events do
+            // not overwrite the manual offline state.
+            let connectivityPlugins = amplitude.plugins(type: NetworkConnectivityCheckerPlugin.self)
+            if !connectivityPlugins.isEmpty {
+                detachedConnectivityPlugins[instanceName] = connectivityPlugins
+                for plugin in connectivityPlugins {
+                    plugin.teardown()
+                    _ = amplitude.remove(plugin: plugin)
+                }
+            }
+            amplitude.configuration.offline = true
+        } else {
+            // Re-enable automatic connectivity checking when returning online
+            if let detached = detachedConnectivityPlugins.removeValue(forKey: instanceName) {
+                for plugin in detached {
+                    _ = amplitude.add(plugin: plugin)
+                }
+            }
+            amplitude.configuration.offline = false
+        }
     }
 
     private func logLevelFromString(_ logLevelString: String) -> LogLevelEnum {
