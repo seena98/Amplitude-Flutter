@@ -206,6 +206,20 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 result.success("setOptOut called..")
             }
 
+            "setOffline" -> {
+                val offline = call.argument<Map<String, Boolean>>("properties")?.get("offline")
+                    ?: call.argument<Boolean>("offline")
+                if (offline != null) {
+                    amplitude.configuration.offline = offline
+                    amplitude.logger.debug("Set offline to $offline")
+                } else {
+                    amplitude.logger.warn("setOffline type casting to Bool failed.")
+                    return
+                }
+
+                result.success("setOffline called..")
+            }
+
             "reset" -> {
                 amplitude.reset()
                 amplitude.logger.debug("Reset userId and deviceId.")
@@ -296,7 +310,9 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         call.argument<Boolean>("useAppSetIdForDeviceId")?.let { builder.useAppSetIdForDeviceId = it }
         call.argument<String>("deviceId")?.let { builder.deviceId = it }
 
-        return builder.build()
+        val configuration = builder.build()
+        call.argument<Boolean>("offline")?.let { configuration.offline = it }
+        return configuration
     }
 
     private fun convertMapToTrackingOptions(map: Map<String, Any>): TrackingOptions {

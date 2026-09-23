@@ -106,6 +106,11 @@ class AmplitudeFlutterPlugin {
           bool enabled = args['setOptOut'];
           instance.setOptOut(enabled.toJS);
         }
+      case "setOffline":
+        {
+          // Browser SDK 2 manages offline automatically; handle method gracefully
+          return;
+        }
       default:
         throw PlatformException(
           code: 'Unimplemented',

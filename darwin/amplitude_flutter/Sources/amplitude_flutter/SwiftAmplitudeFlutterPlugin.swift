@@ -164,6 +164,21 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
 
             result("setOptOut called..")
 
+        case "setOffline":
+            guard let args = arguments?["properties"] as? [String: Any] else {
+                print("\(call.method) called but call.arguments type casting failed.")
+                return
+            }
+            if let offline = args["offline"] as? Bool {
+                amplitude?.configuration.offline = offline
+                amplitude?.logger?.debug(message: "Set offline to \(offline)")
+            } else {
+                amplitude?.logger?.warn(message: "setOffline type casting to Bool failed.")
+                return
+            }
+
+            result("setOffline called..")
+
         case "reset":
             amplitude?.reset()
             amplitude?.logger?.debug(message: "Reset userId and deviceId.")
@@ -263,6 +278,9 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
         }
         if let identifyBatchIntervalMillis = args["identifyBatchIntervalMillis"] as? Int {
             configuration.identifyBatchIntervalMillis = identifyBatchIntervalMillis
+        }
+        if let offline = args["offline"] as? Bool {
+            configuration.offline = offline
         }
 
         return configuration
