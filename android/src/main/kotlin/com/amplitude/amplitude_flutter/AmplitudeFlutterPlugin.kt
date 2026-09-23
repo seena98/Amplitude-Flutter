@@ -32,6 +32,7 @@ private var pluginInstance: AmplitudeFlutterPlugin? = null
 
 class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private var instances: Map<String, Amplitude> = mutableMapOf()
+    private val desiredOfflineStates: MutableMap<String, Boolean> = mutableMapOf()
     private var activity: WeakReference<Activity?> = WeakReference(null)
     lateinit var ctxt: Context
     private var appOpenedTracked = false
@@ -89,8 +90,9 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     override fun onMethodCall(call: MethodCall, result: Result) {
         if (call.method == "init") {
             val configuration = getConfiguration(call)
+            val instanceName = configuration.instanceName
             val amplitude = Amplitude(configuration)
-            instances += mapOf(configuration.instanceName to amplitude)
+            instances += mapOf(instanceName to amplitude)
 
             // Set library
             amplitude.add(
@@ -114,8 +116,14 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 AutocaptureOption.DEEP_LINKS in configuration.autocapture
             )
 
-            if (configuration.offline == true) {
-                applyOfflineMode(amplitude, true)
+            val initialOffline = call.argument<Boolean>("offline") ?: false
+            desiredOfflineStates[instanceName] = initialOffline
+            if (initialOffline) {
+                amplitude.configuration.offline = true
+            }
+
+            amplitude.isBuilt.invokeOnCompletion {
+                syncConnectivityPlugin(instanceName, amplitude)
             }
 
             result.success("init called..")
@@ -215,7 +223,15 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val offline = call.argument<Map<String, Boolean>>("properties")?.get("offline")
                     ?: call.argument<Boolean>("offline")
                 if (offline != null) {
-                    applyOfflineMode(amplitude, offline)
+                    val currentInstanceName = amplitude.configuration.instanceName
+                    desiredOfflineStates[currentInstanceName] = offline
+                    amplitude.configuration.offline = offline
+                    if (amplitude.isBuilt.isCompleted) {
+                        syncConnectivityPlugin(currentInstanceName, amplitude)
+                        if (!offline) {
+                            amplitude.flush()
+                        }
+                    }
                     amplitude.logger.debug("Set offline to $offline")
                 } else {
                     amplitude.logger.warn("setOffline type casting to Bool failed.")
@@ -272,24 +288,23 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
-    private fun applyOfflineMode(amplitude: Amplitude, offline: Boolean) {
-        amplitude.configuration.offline = offline
-        amplitude.isBuilt.invokeOnCompletion {
-            if (offline) {
-                // When manually forced offline, disable and remove the automatic
-                // network connectivity checker so network availability events do
-                // not overwrite the manual offline state.
-                amplitude.findPlugin<AndroidNetworkConnectivityCheckerPlugin>()?.let { plugin ->
-                    plugin.teardown()
-                    amplitude.remove(plugin)
-                }
-                amplitude.configuration.offline = true
-            } else {
-                // Re-enable automatic connectivity checking when returning online
-                if (amplitude.findPlugin<AndroidNetworkConnectivityCheckerPlugin>() == null) {
-                    amplitude.add(AndroidNetworkConnectivityCheckerPlugin())
-                }
+    private fun syncConnectivityPlugin(instanceName: String, amplitude: Amplitude) {
+        val offline = desiredOfflineStates[instanceName] ?: return
+        if (offline) {
+            // When manually forced offline, disable and remove the automatic
+            // network connectivity checker so network availability events do
+            // not overwrite the manual offline state.
+            amplitude.findPlugin<AndroidNetworkConnectivityCheckerPlugin>()?.let { plugin ->
+                plugin.teardown()
+                amplitude.remove(plugin)
             }
+            amplitude.configuration.offline = true
+        } else {
+            // Re-enable automatic connectivity checking when returning online
+            if (amplitude.findPlugin<AndroidNetworkConnectivityCheckerPlugin>() == null) {
+                amplitude.add(AndroidNetworkConnectivityCheckerPlugin())
+            }
+            amplitude.configuration.offline = false
         }
     }
 
@@ -337,7 +352,16 @@ class AmplitudeFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         call.argument<String>("deviceId")?.let { builder.deviceId = it }
 
         val configuration = builder.build()
-        call.argument<Boolean>("offline")?.let { configuration.offline = it }
+        val offline = call.argument<Boolean>("offline")
+        if (offline == true) {
+            // Set configuration.offline to Disabled (null) during construction/build
+            // so Amplitude's internal buildInternal does not install the
+            // AndroidNetworkConnectivityCheckerPlugin, avoiding the race where
+            // the checker immediately resets offline to false upon detecting network.
+            configuration.offline = AndroidNetworkConnectivityCheckerPlugin.Disabled
+        } else if (offline == false) {
+            configuration.offline = false
+        }
         return configuration
     }
 
