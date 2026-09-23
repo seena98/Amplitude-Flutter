@@ -68,7 +68,7 @@ internal var pluginInstance: SwiftAmplitudeFlutterPlugin?
 
             amplitude?.logger?.debug(message: "Amplitude has been successfully initialized.")
 
-            if amplitude?.configuration.offline == true {
+            if configArgs["offline"] as? Bool == true {
                 applyOfflineMode(amplitude: amplitude, offline: true)
             }
 
